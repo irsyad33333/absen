@@ -1,0 +1,296 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR Absensi</title>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<style>
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+}
+
+body {
+  background: #eef2ff;
+  padding: 20px;
+}
+
+.container {
+  max-width: 430px;
+  margin: 20px auto;
+  padding: 22px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 5px 25px #0001;
+}
+
+h2 {
+  text-align: center;
+  color: #2457db;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  text-align: center;
+  color: #777;
+  margin-bottom: 22px;
+  font-size: 14px;
+}
+
+#reader {
+  width: 100%;
+  min-height: 100px;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+select, button {
+  width: 100%;
+  padding: 14px;
+  margin-top: 12px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+
+select {
+  border: 1px solid #ddd;
+  background: white;
+}
+
+button {
+  border: 0;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: .5;
+}
+
+.start {
+  background: #2563eb;
+}
+
+.stop {
+  background: #ef4444;
+}
+
+.reset {
+  background: #64748b;
+}
+
+.result {
+  background: #eff6ff;
+  padding: 15px;
+  border-radius: 12px;
+  margin-top: 20px;
+  overflow-wrap: anywhere;
+}
+
+.result h3 {
+  color: #2457db;
+  margin-bottom: 10px;
+}
+
+#hasil {
+  font-size: 14px;
+  color: #333;
+  line-height: 1.5;
+}
+
+#status {
+  text-align: center;
+  font-size: 13px;
+  color: #666;
+  margin-top: 16px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <h2>QR ABSENSI</h2>
+  <p class="subtitle">Sistem Pemindaian QR Code Siswa</p>
+
+  <div id="reader"></div>
+
+  <select id="kamera">
+    <option value="">Kamera belum dipilih</option>
+  </select>
+
+  <button class="start" id="mulai" onclick="mulaiScan()">
+    BUKA KAMERA
+  </button>
+
+  <button class="stop" id="berhenti" onclick="stopScan()" disabled>
+    TUTUP KAMERA
+  </button>
+
+  <div class="result">
+    <h3>Hasil Pemindaian</h3>
+    <p id="hasil">Belum ada QR Code yang dipindai.</p>
+  </div>
+
+  <button class="reset" onclick="resetHasil()">
+    RESET HASIL
+  </button>
+
+  <p id="status">Status: Siap digunakan.</p>
+
+</div>
+
+<script>
+let scanner = null;
+let aktif = false;
+let proses = false;
+let kameraList = [];
+
+const tombolMulai = document.getElementById("mulai");
+const tombolStop = document.getElementById("berhenti");
+const pilihanKamera = document.getElementById("kamera");
+const statusEl = document.getElementById("status");
+const hasilEl = document.getElementById("hasil");
+
+function status(pesan) {
+  statusEl.textContent = "Status: " + pesan;
+}
+
+async function mulaiScan() {
+  if (aktif || proses) return;
+
+  proses = true;
+  tombolMulai.disabled = true;
+
+  try {
+    status("Meminta izin kamera...");
+
+    if (typeof Html5Qrcode === "undefined") {
+      throw new Error("Library QR tidak berhasil dimuat. Periksa internet.");
+    }
+
+    if (!navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia) {
+      throw new Error("Browser tidak mendukung akses kamera atau bukan HTTPS.");
+    }
+
+    scanner = new Html5Qrcode("reader");
+
+    kameraList = await Html5Qrcode.getCameras();
+
+    if (!kameraList || kameraList.length === 0) {
+      throw new Error("Tidak ada kamera yang ditemukan.");
+    }
+
+    pilihanKamera.innerHTML = "";
+
+    kameraList.forEach((cam, i) => {
+      const option = document.createElement("option");
+      option.value = cam.id;
+      option.textContent = cam.label || "Kamera " + (i + 1);
+      pilihanKamera.appendChild(option);
+    });
+
+    const belakang = kameraList.find(cam =>
+      /back|rear|environment|belakang/i.test(cam.label || "")
+    );
+
+    const idKamera = belakang
+      ? belakang.id
+      : kameraList[0].id;
+
+    pilihanKamera.value = idKamera;
+
+    await jalankan(idKamera);
+
+  } catch (error) {
+    status(error.message || "Kamera gagal dibuka.");
+    tombolMulai.disabled = false;
+  } finally {
+    proses = false;
+  }
+}
+
+async function jalankan(idKamera) {
+  try {
+    await scanner.start(
+      idKamera,
+      {
+        fps: 10,
+        qrbox: { width: 220, height: 220 }
+      },
+      function(teks) {
+        bacaQR(teks);
+      },
+      function() {}
+    );
+
+    aktif = true;
+    tombolMulai.disabled = true;
+    tombolStop.disabled = false;
+    status("Kamera aktif. Silakan scan QR Code.");
+
+  } catch (error) {
+    aktif = false;
+    tombolMulai.disabled = false;
+    tombolStop.disabled = true;
+    throw error;
+  }
+}
+
+async function stopScan() {
+  if (!scanner || !aktif) return;
+
+  try {
+    await scanner.stop();
+    aktif = false;
+    tombolMulai.disabled = false;
+    tombolStop.disabled = true;
+    status("Kamera berhasil ditutup.");
+  } catch (error) {
+    status("Gagal menutup kamera: " + error.message);
+  }
+}
+
+function bacaQR(teks) {
+  if (proses || !teks) return;
+
+  proses = true;
+  hasilEl.textContent = teks;
+  status("QR Code berhasil dibaca!");
+
+  setTimeout(() => {
+    proses = false;
+  }, 2000);
+}
+
+function resetHasil() {
+  hasilEl.textContent = "Belum ada QR Code yang dipindai.";
+  status(aktif ? "Kamera masih aktif." : "Siap digunakan.");
+}
+
+pilihanKamera.addEventListener("change", async function() {
+  if (!aktif || !this.value) return;
+
+  try {
+    await scanner.stop();
+    aktif = false;
+    tombolStop.disabled = true;
+    await jalankan(this.value);
+  } catch (error) {
+    status("Gagal mengganti kamera: " + error.message);
+    tombolMulai.disabled = false;
+  }
+});
+</script>
+
+</body>
+</html>
