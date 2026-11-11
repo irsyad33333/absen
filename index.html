@@ -8,8 +8,6 @@
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <style>
-    * { box-sizing: border-box; }
-
     body {
       margin: 0;
       padding: 20px;
@@ -60,7 +58,6 @@
 
     button:disabled {
       opacity: .5;
-      cursor: not-allowed;
     }
 
     select {
@@ -75,7 +72,10 @@
       line-height: 1.5;
     }
 
-    .hint { color: #80938a; font-size: 13px; }
+    .hint {
+      color: #80938a;
+      font-size: 13px;
+    }
   </style>
 </head>
 
@@ -146,7 +146,7 @@
           !navigator.mediaDevices ||
           !navigator.mediaDevices.getUserMedia) {
         setMessage(
-          "Kamera memerlukan browser yang mendukung HTTPS dan akses kamera.",
+          "Kamera memerlukan browser HTTPS yang mendukung akses kamera.",
           true
         );
         return;
@@ -195,8 +195,10 @@
 
         let text = error.message || String(error);
 
-        if (error.name === "NotAllowedError" ||
-            error.name === "PermissionDeniedError") {
+        if (
+          error.name === "NotAllowedError" ||
+          error.name === "PermissionDeniedError"
+        ) {
           text =
             "Izin kamera ditolak. Klik ikon pengaturan situs di samping alamat, ubah Kamera menjadi Izinkan, lalu muat ulang halaman.";
         } else if (error.name === "NotFoundError") {
@@ -293,10 +295,6 @@
       setMessage(
         "QR berhasil dikirim. Periksa hasil absensi pada aplikasi utama."
       );
-
-      setTimeout(() => {
-        processing = false;
-      }, 2500);
     }
 
     async function stopCamera() {
