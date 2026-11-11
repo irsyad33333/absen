@@ -5,9 +5,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Scanner Absensi QR</title>
+
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
   <style>
     * { box-sizing: border-box; }
+
     body {
       margin: 0;
       padding: 20px;
@@ -15,26 +18,36 @@
       display: grid;
       place-items: center;
       font-family: Arial, sans-serif;
+      background: #edf6f0;
       color: #17352c;
-      background: #eef7f2;
     }
+
     .card {
       width: 100%;
-      max-width: 480px;
+      max-width: 500px;
       padding: 25px;
       border-radius: 22px;
       background: white;
       box-shadow: 0 12px 40px #174d3020;
       text-align: center;
     }
+
     h2 { margin-bottom: 8px; }
-    p { color: #71877c; font-size: 13px; line-height: 1.6; }
+
+    p {
+      color: #71877c;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
     #reader {
       margin-top: 20px;
       overflow: hidden;
       border: 2px dashed #b9d8c7;
       border-radius: 15px;
+      min-height: 100px;
     }
+
     button {
       width: 100%;
       padding: 15px;
@@ -46,29 +59,47 @@
       background: #087f5b;
       color: white;
     }
-    button.secondary { background: #e6f1eb; color: #087f5b; }
+
+    button.secondary {
+      background: #e6f1eb;
+      color: #087f5b;
+    }
+
     button:disabled { opacity: .5; }
+
     #message {
       margin-top: 16px;
       font-size: 13px;
       line-height: 1.6;
       overflow-wrap: anywhere;
     }
+
     .success { color: #078354; }
     .error { color: #d44350; }
   </style>
 </head>
+
 <body>
+
   <main class="card">
     <h2>Scanner Absensi QR</h2>
-    <p>Izinkan akses kamera, kemudian arahkan QR Code siswa ke kamera.</p>
+    <p>
+      Izinkan akses kamera, kemudian arahkan QR Code siswa ke kamera.
+    </p>
 
     <div id="reader"></div>
 
-    <button id="startButton" onclick="startCamera()">IZINKAN & MULAI KAMERA</button>
-    <button class="secondary" onclick="stopCamera()">HENTIKAN KAMERA</button>
+    <button id="startButton" onclick="startCamera()">
+      IZINKAN & MULAI KAMERA
+    </button>
 
-    <div id="message">Tekan tombol untuk memulai kamera.</div>
+    <button class="secondary" onclick="stopCamera()">
+      HENTIKAN KAMERA
+    </button>
+
+    <div id="message">
+      Tekan tombol untuk memulai kamera.
+    </div>
   </main>
 
   <script>
@@ -79,75 +110,96 @@
     const params = new URLSearchParams(location.search);
     const returnOrigin = params.get("returnOrigin");
 
-    function message(text, type = "") {
-      const el = document.getElementById("message");
-      el.textContent = text;
-      el.className = type;
+    function showMessage(text, type) {
+      const element = document.getElementById("message");
+      element.textContent = text;
+      element.className = type || "";
     }
 
     async function startCamera() {
-      if (running || !window.Html5Qrcode) return;
+      if (running) return;
 
       if (!window.isSecureContext || !navigator.mediaDevices) {
-        message("Kamera membutuhkan HTTPS dan browser yang mendukung akses kamera.", "error");
+        showMessage(
+          "Kamera memerlukan HTTPS dan browser yang mendukung kamera.",
+          "error"
+        );
+        return;
+      }
+
+      if (!window.Html5Qrcode) {
+        showMessage(
+          "Library scanner belum berhasil dimuat. Periksa internet.",
+          "error"
+        );
         return;
       }
 
       const button = document.getElementById("startButton");
       button.disabled = true;
-      message("Meminta izin kamera...");
+
+      showMessage("Meminta izin kamera...");
+
+      scanner = new Html5Qrcode("reader");
+
+      const config = {
+        fps: 10,
+        qrbox: { width: 240, height: 240 },
+        aspectRatio: 1
+      };
 
       try {
-        scanner = new Html5Qrcode("reader");
-
-        const config = {
-          fps: 10,
-          qrbox: { width: 240, height: 240 },
-          aspectRatio: 1
-        };
-
         try {
           await scanner.start(
             { facingMode: "environment" },
             config,
             onScan,
-            () => {}
+            function() {}
           );
         } catch (firstError) {
           const cameras = await Html5Qrcode.getCameras();
-          if (!cameras || !cameras.length) throw firstError;
+
+          if (!cameras || cameras.length === 0) {
+            throw firstError;
+          }
 
           await scanner.start(
             cameras[0].id,
             config,
             onScan,
-            () => {}
+            function() {}
           );
         }
 
         running = true;
-        message("Kamera aktif. Silakan scan QR Code siswa.", "success");
+        showMessage("Kamera aktif. Silakan scan QR Code siswa.", "success");
 
       } catch (error) {
         console.error(error);
-        let info = error.message || "Kamera tidak dapat dibuka.";
 
-        if (error.name === "NotAllowedError" ||
-            error.name === "PermissionDeniedError") {
-          info = "Izin kamera ditolak. Izinkan kamera untuk GitHub Pages melalui pengaturan Chrome.";
+        let message = error.message || "Kamera tidak dapat dibuka.";
+
+        if (
+          error.name === "NotAllowedError" ||
+          error.name === "PermissionDeniedError"
+        ) {
+          message =
+            "Izin kamera ditolak. Izinkan kamera untuk GitHub Pages melalui pengaturan Chrome.";
         } else if (error.name === "NotFoundError") {
-          info = "Kamera tidak ditemukan.";
+          message = "Kamera tidak ditemukan.";
         } else if (error.name === "NotReadableError") {
-          info = "Kamera sedang digunakan aplikasi lain.";
+          message = "Kamera sedang digunakan aplikasi lain.";
         }
 
-        message(info, "error");
+        showMessage(message, "error");
 
-        if (scanner) {
-          try { await scanner.clear(); } catch (e) {}
-        }
+        try {
+          if (scanner) await scanner.clear();
+        } catch (e) {}
+
         scanner = null;
         running = false;
+
       } finally {
         button.disabled = false;
       }
@@ -157,8 +209,12 @@
       if (!scanner) return;
 
       try {
-        if (running) await scanner.stop();
+        if (running) {
+          await scanner.stop();
+        }
+
         await scanner.clear();
+
       } catch (error) {
         console.warn(error);
       }
@@ -166,37 +222,59 @@
       scanner = null;
       running = false;
       processing = false;
-      message("Kamera dihentikan.");
+
+      showMessage("Kamera dihentikan.");
     }
 
     function onScan(decodedText) {
       if (processing) return;
 
-      const nisn = String(decodedText).trim();
+      const nisn = String(decodedText || "").trim();
+
       if (!nisn) return;
 
       processing = true;
-      message("QR berhasil dibaca. Mengirim data absensi...");
+
+      showMessage("QR berhasil dibaca. Mengirim data absensi...");
 
       if (!window.opener || window.opener.closed) {
-        message("Halaman aplikasi absensi tidak ditemukan. Buka scanner dari aplikasi absensi.", "error");
+        showMessage(
+          "Aplikasi absensi tidak ditemukan. Buka scanner dari aplikasi absensi.",
+          "error"
+        );
+
         processing = false;
         return;
       }
 
-      window.opener.postMessage({
-        type: "QR_ATTENDANCE",
-        studentId: nisn
-      }, returnOrigin || "*");
+      if (!returnOrigin || !/^https:\/\/.+/.test(returnOrigin)) {
+        showMessage("Alamat aplikasi pengirim tidak valid.", "error");
+        processing = false;
+        return;
+      }
 
-      message("QR terkirim. Silakan kembali ke aplikasi absensi.", "success");
+      window.opener.postMessage(
+        {
+          type: "QR_ATTENDANCE",
+          studentId: nisn
+        },
+        returnOrigin
+      );
+
+      showMessage(
+        "QR berhasil dikirim. Kembali ke aplikasi absensi.",
+        "success"
+      );
 
       stopCamera();
     }
 
-    window.addEventListener("beforeunload", () => {
-      if (scanner && running) scanner.stop().catch(() => {});
+    window.addEventListener("beforeunload", function() {
+      if (scanner && running) {
+        scanner.stop().catch(function() {});
+      }
     });
   </script>
+
 </body>
 </html>
