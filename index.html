@@ -14,219 +14,251 @@
     body {
       margin: 0;
       padding: 20px;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
+      background: #edf5f1;
       font-family: Arial, sans-serif;
-      background: #edf6f0;
-      color: #17352c;
+      color: #183b30;
     }
 
     .card {
-      width: 100%;
-      max-width: 500px;
-      padding: 25px;
-      border-radius: 22px;
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 24px;
       background: white;
-      box-shadow: 0 12px 40px #174d3020;
+      border-radius: 22px;
+      box-shadow: 0 10px 30px #123b2912;
       text-align: center;
     }
 
-    h2 { margin-bottom: 8px; }
-
-    p {
-      color: #71877c;
-      font-size: 13px;
-      line-height: 1.6;
-    }
+    h2 { margin-top: 0; }
 
     #reader {
-      margin-top: 20px;
+      width: 100%;
+      min-height: 220px;
+      margin: 18px auto;
       overflow: hidden;
-      border: 2px dashed #b9d8c7;
       border-radius: 15px;
-      min-height: 100px;
+    }
+
+    button, select {
+      width: 100%;
+      min-height: 48px;
+      margin-top: 10px;
+      padding: 12px;
+      border: 0;
+      border-radius: 12px;
+      font-size: 15px;
     }
 
     button {
-      width: 100%;
-      padding: 15px;
-      margin-top: 12px;
-      border: 0;
-      border-radius: 12px;
+      color: white;
+      background: #087b61;
       font-weight: bold;
       cursor: pointer;
-      background: #087f5b;
-      color: white;
     }
 
     button.secondary {
-      background: #e6f1eb;
-      color: #087f5b;
+      color: #075744;
+      background: #e5f3ed;
     }
 
-    button:disabled { opacity: .5; }
+    button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    select {
+      border: 1px solid #dce8e2;
+      background: white;
+    }
 
     #message {
-      margin-top: 16px;
+      min-height: 24px;
+      margin-top: 15px;
       font-size: 13px;
-      line-height: 1.6;
-      overflow-wrap: anywhere;
+      line-height: 1.5;
     }
 
-    .success { color: #078354; }
-    .error { color: #d44350; }
+    .hint { color: #80938a; font-size: 13px; }
   </style>
 </head>
 
 <body>
-
   <main class="card">
-    <h2>Scanner Absensi QR</h2>
-    <p>
-      Izinkan akses kamera, kemudian arahkan QR Code siswa ke kamera.
+    <h2>Scanner Kehadiran QR</h2>
+    <p class="hint">
+      Arahkan kamera ke QR Code siswa. Pastikan QR berisi NISN.
     </p>
+
+    <select id="cameraSelect" disabled>
+      <option value="">Kamera akan terdeteksi setelah izin diberikan</option>
+    </select>
 
     <div id="reader"></div>
 
     <button id="startButton" onclick="startCamera()">
-      IZINKAN & MULAI KAMERA
+      Mulai Kamera
     </button>
 
-    <button class="secondary" onclick="stopCamera()">
-      HENTIKAN KAMERA
+    <button id="stopButton" class="secondary" onclick="stopCamera()" disabled>
+      Hentikan Kamera
     </button>
 
-    <div id="message">
-      Tekan tombol untuk memulai kamera.
-    </div>
+    <p id="message">Tekan Mulai Kamera untuk meminta izin kamera.</p>
   </main>
 
   <script>
     let scanner = null;
     let running = false;
     let processing = false;
+    let cameras = [];
+
+    const message = document.getElementById("message");
+    const startButton = document.getElementById("startButton");
+    const stopButton = document.getElementById("stopButton");
+    const cameraSelect = document.getElementById("cameraSelect");
 
     const params = new URLSearchParams(location.search);
-    const returnOrigin = params.get("returnOrigin");
+    const returnOrigin = params.get("returnOrigin") || "";
 
-    function showMessage(text, type) {
-      const element = document.getElementById("message");
-      element.textContent = text;
-      element.className = type || "";
+    function setMessage(text, error = false) {
+      message.textContent = text;
+      message.style.color = error ? "#c34d4d" : "#087b61";
+    }
+
+    function validReturnOrigin(origin) {
+      try {
+        const u = new URL(origin);
+
+        return (
+          u.protocol === "https:" &&
+          (
+            u.hostname === "script.google.com" ||
+            u.hostname.endsWith(".googleusercontent.com")
+          )
+        );
+      } catch (e) {
+        return false;
+      }
     }
 
     async function startCamera() {
       if (running) return;
 
-      if (!window.isSecureContext || !navigator.mediaDevices) {
-        showMessage(
-          "Kamera memerlukan HTTPS dan browser yang mendukung kamera.",
-          "error"
+      if (!window.isSecureContext) {
+        setMessage(
+          "Kamera memerlukan HTTPS. Buka scanner melalui alamat GitHub Pages HTTPS.",
+          true
         );
         return;
       }
 
-      if (!window.Html5Qrcode) {
-        showMessage(
-          "Library scanner belum berhasil dimuat. Periksa internet.",
-          "error"
+      if (!navigator.mediaDevices ||
+          !navigator.mediaDevices.getUserMedia) {
+        setMessage(
+          "Browser tidak mendukung akses kamera. Gunakan Chrome terbaru.",
+          true
         );
         return;
       }
 
-      const button = document.getElementById("startButton");
-      button.disabled = true;
-
-      showMessage("Meminta izin kamera...");
-
-      scanner = new Html5Qrcode("reader");
-
-      const config = {
-        fps: 10,
-        qrbox: { width: 240, height: 240 },
-        aspectRatio: 1
-      };
+      startButton.disabled = true;
+      setMessage("Meminta izin kamera...");
 
       try {
-        try {
-          await scanner.start(
-            { facingMode: "environment" },
-            config,
-            onScan,
-            function() {}
-          );
-        } catch (firstError) {
-          const cameras = await Html5Qrcode.getCameras();
+        // Meminta izin setelah tindakan klik pengguna.
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false
+        });
 
-          if (!cameras || cameras.length === 0) {
-            throw firstError;
-          }
+        stream.getTracks().forEach(track => track.stop());
 
-          await scanner.start(
-            cameras[0].id,
-            config,
-            onScan,
-            function() {}
-          );
+        cameras = await Html5Qrcode.getCameras();
+
+        if (!cameras || !cameras.length) {
+          throw new Error("Kamera tidak ditemukan.");
         }
 
-        running = true;
-        showMessage("Kamera aktif. Silakan scan QR Code siswa.", "success");
+        cameraSelect.innerHTML = "";
+
+        cameras.forEach((camera, index) => {
+          const option = document.createElement("option");
+          option.value = camera.id;
+          option.textContent = camera.label || ("Kamera " + (index + 1));
+          cameraSelect.appendChild(option);
+        });
+
+        cameraSelect.disabled = false;
+
+        const rearCamera = cameras.find(c =>
+          /back|rear|environment|belakang/i.test(c.label)
+        );
+
+        const selectedCamera = rearCamera || cameras[0];
+        cameraSelect.value = selectedCamera.id;
+
+        await runScanner(selectedCamera.id);
 
       } catch (error) {
-        console.error(error);
+        startButton.disabled = false;
 
-        let message = error.message || "Kamera tidak dapat dibuka.";
+        let explanation = error.message || String(error);
 
         if (
           error.name === "NotAllowedError" ||
           error.name === "PermissionDeniedError"
         ) {
-          message =
-            "Izin kamera ditolak. Izinkan kamera untuk GitHub Pages melalui pengaturan Chrome.";
+          explanation =
+            "Izin kamera ditolak. Klik ikon gembok di samping alamat situs, buka Setelan situs, ubah Kamera menjadi Izinkan, lalu muat ulang halaman.";
         } else if (error.name === "NotFoundError") {
-          message = "Kamera tidak ditemukan.";
+          explanation = "Kamera tidak ditemukan pada perangkat ini.";
         } else if (error.name === "NotReadableError") {
-          message = "Kamera sedang digunakan aplikasi lain.";
+          explanation = "Kamera sedang digunakan aplikasi lain. Tutup aplikasi kamera lain lalu coba lagi.";
         }
 
-        showMessage(message, "error");
-
-        try {
-          if (scanner) await scanner.clear();
-        } catch (e) {}
-
-        scanner = null;
-        running = false;
-
-      } finally {
-        button.disabled = false;
+        setMessage(explanation, true);
       }
     }
 
-    async function stopCamera() {
-      if (!scanner) return;
+    async function runScanner(cameraId) {
+      if (scanner && running) {
+        await stopCamera();
+      }
+
+      scanner = new Html5Qrcode("reader");
 
       try {
-        if (running) {
-          await scanner.stop();
-        }
+        await scanner.start(
+          cameraId,
+          {
+            fps: 10,
+            qrbox: function(width, height) {
+              const size = Math.floor(Math.min(width, height) * 0.72);
+              return { width: size, height: size };
+            },
+            aspectRatio: 1
+          },
+          onScanSuccess,
+          function() {}
+        );
 
-        await scanner.clear();
+        running = true;
+        startButton.disabled = true;
+        stopButton.disabled = false;
+        setMessage("Kamera aktif. Arahkan ke QR Code siswa.");
 
       } catch (error) {
-        console.warn(error);
+        running = false;
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        setMessage(
+          "Tidak dapat memulai kamera: " + (error.message || error),
+          true
+        );
       }
-
-      scanner = null;
-      running = false;
-      processing = false;
-
-      showMessage("Kamera dihentikan.");
     }
 
-    function onScan(decodedText) {
+    async function onScanSuccess(decodedText) {
       if (processing) return;
 
       const nisn = String(decodedText || "").trim();
@@ -234,47 +266,80 @@
       if (!nisn) return;
 
       processing = true;
+      setMessage("QR terbaca. Mengirim data absensi...");
 
-      showMessage("QR berhasil dibaca. Mengirim data absensi...");
+      try {
+        await stopCamera();
 
-      if (!window.opener || window.opener.closed) {
-        showMessage(
-          "Aplikasi absensi tidak ditemukan. Buka scanner dari aplikasi absensi.",
-          "error"
+        if (!window.opener || window.opener.closed) {
+          setMessage(
+            "Halaman aplikasi utama tidak ditemukan. Buka scanner dari aplikasi absensi.",
+            true
+          );
+          processing = false;
+          return;
+        }
+
+        if (!validReturnOrigin(returnOrigin)) {
+          setMessage(
+            "Alamat aplikasi utama tidak valid. Buka ulang scanner dari aplikasi.",
+            true
+          );
+          processing = false;
+          return;
+        }
+
+        window.opener.postMessage(
+          {
+            type: "QR_ATTENDANCE",
+            studentId: nisn
+          },
+          returnOrigin
         );
 
+        setMessage("QR berhasil dikirim. Periksa hasil absensi pada aplikasi utama.");
+        setTimeout(() => {
+          processing = false;
+        }, 2500);
+
+      } catch (error) {
+        setMessage(error.message || String(error), true);
         processing = false;
-        return;
       }
-
-      if (!returnOrigin || !/^https:\/\/.+/.test(returnOrigin)) {
-        showMessage("Alamat aplikasi pengirim tidak valid.", "error");
-        processing = false;
-        return;
-      }
-
-      window.opener.postMessage(
-        {
-          type: "QR_ATTENDANCE",
-          studentId: nisn
-        },
-        returnOrigin
-      );
-
-      showMessage(
-        "QR berhasil dikirim. Kembali ke aplikasi absensi.",
-        "success"
-      );
-
-      stopCamera();
     }
+
+    async function stopCamera() {
+      if (scanner && running) {
+        try {
+          await scanner.stop();
+          await scanner.clear();
+        } catch (error) {
+          console.warn(error);
+        }
+      }
+
+      running = false;
+      startButton.disabled = false;
+      stopButton.disabled = true;
+    }
+
+    cameraSelect.addEventListener("change", async function() {
+      if (!cameraSelect.value) return;
+
+      const selected = cameraSelect.value;
+
+      if (running) {
+        await stopCamera();
+      }
+
+      await runScanner(selected);
+    });
 
     window.addEventListener("beforeunload", function() {
       if (scanner && running) {
-        scanner.stop().catch(function() {});
+        scanner.stop().catch(() => {});
       }
     });
   </script>
-
 </body>
 </html>
